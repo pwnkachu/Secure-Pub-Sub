@@ -1,0 +1,435 @@
+theory SecureAbC_Nonce
+
+/*
+    This code represents the model of Secure Publish Subscribe Paradigm used for 
+    symbolic verification of STRIDE thread modelling properties. Secure Publish Subscribe
+    uses the following operations:
+
+    - Set(var,value) Used to update local environment and send the changes to the Broker
+
+    - Sub(predicate, type, handler) Used to subscribe to single event satisfied by the specified predicate
+
+    - Sub(predicate, type, *handler) Used to subscribe to all events satisfied by the specified predicate
+
+    - Pub(Predicate, value) Publishes a value if the predicate is satisfied by the subscriber
+
+    TODO Must analyze if one shot handler should also be included. In this version only the 
+    permanent handler subscription has been implemented.
+
+    Defines public predicates into set operation because the evaluation is given by the current environment of an agent.
+    
+
+    To fix previous vulnerability we propose:
+
+    - The use of a nonce in every message, this will later be implemented as a nonce that is 
+      valid only for a certain thresold given by a timeline as stated in MQTT protocol.
+    
+    - TODO: The agent CA's signature verification of an incoming publication. This is done to ensure
+      that an attacker cannot craft arbitrary values and send them to an Agent to change it's 
+      behaviour
+*/
+
+begin
+    builtins: asymmetric-encryption, signing
+
+    restriction Equality:
+        "All x y #i. Eq(x,y) @ #i ==> x = y"
+
+    restriction Single_KeyGen_Per_Agent:
+        "All A ltk1 ltk2 #i #j. KeyGen(A, ltk1) @ #i & KeyGen(A, ltk2) @ #j ==> #i = #j"
+
+    restriction Single_CA_Setup:
+        "All skCA1 skCA2 #i #j. CAKeyGen(skCA1) @ #i & CAKeyGen(skCA2) @ #j ==> #i = #j"
+    
+    /* CA will validate a nonce if and only if it's has been used only once */
+    restriction CA_Verified_Nonce:
+        "All A nonce #i #j. VerifiedNonce(A, nonce) @ #i & VerifiedNonce(A, nonce) @ #j ==> #i = #j"
+
+    // --- SETUP RULES ---
+    
+    /* Agent Keys Generation */
+    /* 
+     * Generates a long-term asymmetric key pair (~ltkA) for an agent $A$.
+     * Publishes the public key and stores the private and public keys in the internal state.
+     */
+    rule Agent_KeyGen:
+    [ Fr(~ltkA) ] 
+    --[ KeyGen($A, ~ltkA) ]-> 
+    [ 
+        !Ltk($A, ~ltkA), 
+        !Pk($A, pk(~ltkA)), Out(pk(~ltkA)) 
+    ]
+
+    /* CA Keys Generation */
+    /* 
+     * Generates a long-term asymmetric key pair (~skCA) for the Certificate Authority (CA).
+     * Publishes the CA public key and stores both private and public keys in the internal state.
+     */
+    rule Generate_CA_Keys:
+    [ Fr(~skCA) ]
+    --[ CAKeyGen(~skCA) ]->
+    [ 
+        !CA_PrivateKey(~skCA), 
+        !CA_PublicKey(pk(~skCA)), 
+        Out(pk(~skCA)) 
+    ]
+
+    /* *  ChanOut_S
+     *  Moves a secure channel output message intended for an agent into the secure channel fact space.
+     */
+    rule ChanOut_S:
+        [ Out_S($A,$B,x) ] --[ ChanOut_S($A,$B,x) ]-> [ Sec($A,$B,x) ]
+
+    /* *  ChanIn_S
+     *  Consumes the secure channel fact, allowing the recipient to read the transmitted message securely.
+     */
+    rule ChanIn_S:
+        [ Sec($A,$B,x) ] --[ ChanIn_S($A,$B,x) ]-> [ In_S($A,$B,x) ]
+
+
+    // --- UPDATE / REGISTRATION ---
+
+    /* The agent attribute environemnt is represented as a unique random value */
+    /*
+     * An agent creates an environment attribute value, encrypts it using the CA public key, 
+     * and signs the encrypted payload along with their identity to submit the environment data.
+     */
+    rule Agent_Set_Env:
+    let 
+        enc_env = aenc(<'env', ~attribute, $PredicateEnv, ~nonce>, pkCA )
+        signature = sign(<enc_env, $A>, ~ltkA )
+    in
+    [ 
+        !Ltk($A, ~ltkA), 
+        !CA_PublicKey(pkCA), 
+        Fr(~attribute),
+        Fr(~nonce)
+    ]
+    --[ 
+        Sent_EnvSubmit($A, ~attribute, enc_env),
+        OUT_Env(~attribute, enc_env)
+    ]->
+    [ 
+        Out(<signature, enc_env> ) 
+    ]
+
+    /* CA Verifies the signature to let the Broker store the environmet */
+    /* 
+     * Verifies the submitted environment signature using the agent's public key. 
+     * Upon successful validation, stores the encrypted environment tied to the agent in the internal state.
+     */
+    rule CA_Verify_Env_Submission:
+    let 
+        enc_env = aenc(<'env', attr, $PredicateEnv, nonce>, pk(~skCA) )
+        result_env = aenc(<'env', attr, $PredicateEnv>, pkCA)
+    in
+    [
+        !CA_PrivateKey(~skCA),
+        !CA_PublicKey(pkCA),
+        !Pk($A, pkA),
+        In(<signature, enc_env>)
+    ]
+    --[ 
+        Eq( verify(signature, <enc_env, $A>, pkA), true ),
+        VerifiedEnvSubmit($A, enc_env),
+        CA_Verified_Env($A, attr, enc_env),
+        IN_Env(attr, enc_env),
+        VerifiedNonce($A, nonce)
+    ]->
+    [ !Broker_Env($A, result_env) ]
+
+
+    // --- SUBSCRIPTION ---
+
+    /* 
+     * An agent requests a subscription to a topic and type, encrypting the request with the CA key 
+     * and signing it. A fresh local handler variable is assigned to manage asynchronous responses.
+     */
+    rule Agent_Request_Subscription:
+    let 
+        subscription = aenc(<'subscribe', $Predicate, $Type, ~nonce>, pkCA)
+        signature = sign(<subscription, $A>, ~ltkA)
+    in
+    [ 
+        !Ltk($A, ~ltkA), 
+        !CA_PublicKey(pkCA),
+        Fr(~handler),
+        Fr(~nonce)
+    ]
+    --[ 
+        RequestSubscription($A, subscription),
+        RequestPredicate($A, $Predicate),
+        OUT_Sub(subscription)
+    ]->
+    [        
+        !Handler($A, ~handler),
+        Out(<subscription, signature, $A, ~handler>) 
+    ]
+
+    /* 
+     * Verifies the signature of the subscriber agent. Upon validation, forwards 
+     * the verified subscription parameters securely to the Broker.
+     */
+    rule CA_Verify_Subscription_Request:
+    let
+        subscription = aenc(<'subscribe', $Predicate, $Type, nonce>, pk(~skCA))
+        // After uniqueness validation we can remove the nonce from the encrypted message
+        subResult = aenc(<'subscribe', $Predicate, $Type>, pkCA)
+    in
+    [ 
+        !CA_PrivateKey(~skCA),
+        !CA_PublicKey(pkCA),
+        !Pk($A, pkA),
+        In(<subscription, signature, $A, handler>)
+    ]
+    --[ 
+        Eq(verify(signature, <subscription, $A>, pkA), true ),
+        IN_Sub(subscription),
+        OUT_Broker_Sub('CA', 'Broker', <$A, subResult, handler>),
+        VerifiedSubscription($A, subscription),
+        VerifiedNonce($A, nonce)
+    ]->
+    [ Out_S('CA', 'Broker', <$A, subResult, handler>) ]
+
+    /* 
+     * Receives the confirmed subscription securely from the CA and stores it 
+     * in the active subscriptions repository (!Subscription).
+     */
+    rule Broker_Process_Subscription_Response:
+    [ In_S('CA', 'Broker', <$A, msg, handler>) ]
+    --[ 
+        IN_Broker_Sub('CA', 'Broker', <$A, msg, handler>),
+        Broker_Stored_Sub($A, msg, handler)
+    ]->
+    [ !Subscription($A, msg, handler) ]
+
+    // --- PUBLICATION ---
+
+    /* The publication is modeled throguh a public topic and a random value. We use a public value type
+        to model type checking for incoming values from the subscriber perspective
+    */
+    /* *  Agent_Request_Publication
+     * An agent constructs a publication payload encrypted with the CA public key and signs it 
+     * using their long-term private key to request publication on a general topic.
+     */
+    rule Agent_Request_Publication:
+    let 
+        publication = aenc(<'publish', $PredicatePub, ~value, $Type, ~nonce>, pkCA)
+        signature = sign(<publication, $A>, ~ltkA)
+    in
+    [ 
+        !Ltk($A, ~ltkA), 
+        !CA_PublicKey(pkCA), 
+        Fr(~value),
+        Fr(~nonce)
+    ]
+    --[ 
+        RequestPublication($A, $PredicatePub, ~value),
+        OUT_Pub(~value, publication)
+    ]->
+    [ Out(<publication, signature, $A>) ]
+
+    /* Broker collects the publication and sends the request for every subscriber agent */
+    /* 
+     * Collects the publication request from the network, cross-references internal active subscriptions, 
+     * and forwards the validation task via a secure channel to the CA.
+     */
+    rule Broker_Process_Publication_Request:
+    let
+        subscribe_msg = <sub_msg, handler>
+    in
+    [ 
+        In(<publication, signature, $A>),
+        !Subscription($B, sub_msg, handler)
+    ]
+    --[ 
+        Broker_Processes_Publication($A, publication) 
+    ]->
+    [
+        Out_S('Broker', 'CA', <publication, signature, $A, $B, subscribe_msg>)
+    ]
+
+    /* CA must verify the signature and that the incoming type and topic matches */
+    /* 
+     * CA securely receives the publication request, verifies the agent's signature, validates topic/type matching,
+     * re-encrypts the publication value with the subscriber's public key, and dispatches the result.
+     */
+    rule CA_Verify_Publication_Request:
+    let
+        publication = aenc(<'publish', $PredicatePub, value, $type, nonce>, pk(~skCA))
+        subscribe_msg = aenc(<'subscribe', $PredicateSub, $type>, pk(~skCA))
+        result = aenc(value, pkB)
+        enc_env_a = aenc(<'env', attr, $PredicateSub>, pk(~skCA))
+        enc_env_b = aenc(<'env', attr2, $PredicatePub>, pk(~skCA))
+    in
+    [ 
+        !CA_PrivateKey(~skCA),
+        !Broker_Env($A, enc_env_a),
+        !Broker_Env($B, enc_env_b),
+        !Pk($A, pkA),
+        !Pk($B, pkB), 
+        In_S('Broker', 'CA', <publication, signature, $A, $B, <subscribe_msg, handler>>)
+    ]
+    --[ 
+        // Signature validation
+        Eq( verify(signature, <publication, $A>, pkA), true ),
+        VerifiedPublication($A, value),
+        SubSatisfied($B, value, $PredicateSub),
+        IN_Pub(value, publication),
+        VerifiedNonce($A, nonce)
+    ]->
+    [ Out(<'to_subscriber', result, handler>) ]
+
+    /*
+     * The subscriber agent matches the incoming response using its private key and handler, 
+     * securely consuming the published publication value.
+     * The problem here is that the handler is public (and may be infered in real implementation)
+     * thus an attacker can always generate a fake value and encrypt it with the public key
+     * of the agent, this will may evolve in arbitrary behaviour in Complex Adaptive Systems.
+     */
+    rule Agent_Receive_Publication:
+    let
+        result = aenc(value, pk(~ltkB))
+    in
+    [ 
+        !Ltk($B, ~ltkB),
+        !Handler($B, handler),
+        In(<'to_subscriber', result, handler>)
+    ]
+    --[ 
+        ReceivedPublication($B, value),
+        Agent_Rx_PubResp($B, value, result)
+    ]->
+    [ ]
+
+    /* LEMMAS */
+
+    /* --- SOURCES LEMMAS --- */
+    
+    /* Publication of a value v either happens from :
+        - Honest participant request verified by CA 
+        - The attacker must know v
+        For Broker subscription rules we aassure that the attacker
+        cannot directly inject a message due to the fact that we used 
+        a Secure channel for CA and Broker communication.
+    */
+    lemma types[sources]:
+        "(All secret publication #i.
+            (IN_Pub(secret, publication) @ #i) 
+        ==> (Ex #j. (!KU(secret) @ #j) & (#j < #i))
+        | (Ex #j. (OUT_Pub(secret, publication) @ #j) & (#j < #i)))
+        &
+        (All m1 m2 m3 #i. 
+            (IN_Broker_Sub(m1,m2,m3) @ #i)
+        ==> (Ex #j. (OUT_Broker_Sub(m1,m2,m3) @ #j) & (#j < #i)))"
+            
+    /* --- EXECUTABILITY LEMMAS --- */
+
+    /* * Lemma: Executability_Receive_Publication
+     *  Verifies that the system trace can successfully reach a state where an agent receives a publication.
+     */
+    lemma Executability_Receive_Publication:
+        exists-trace
+        "Ex B value #i. ReceivedPublication(B, value) @ #i"
+
+    /* * Lemma: Executability_CA_Matching
+     *  Checks if the CA can successfully verify a publication request trace.
+     */
+    lemma Executability_CA_Matching:
+        exists-trace
+        "Ex A value #i. VerifiedPublication(A, value) @ #i"
+
+    /* * Lemma: Executability_Env_Update
+     *  Ensures that a trace where the CA verifies an environment submission can be executed.
+     */
+    lemma Executability_Env_Update: 
+        exists-trace
+        "Ex A enc_env #i. VerifiedEnvSubmit(A, enc_env) @ #i"
+
+
+    /* --- STRIDE SECURITY LEMMAS --- */
+
+    /* * Lemma: Spoofing_Env_Authentication
+     * Ensures that if an environment submission is verified by the CA, the specific agent must have sent it previously (Spoofing/Authentication protection).
+     */
+    lemma Spoofing_Env_Authentication:
+        "All A enc_env #i. VerifiedEnvSubmit(A, enc_env) @ #i 
+         ==> (Ex attr #j. Sent_EnvSubmit(A, attr, enc_env) @ #j & #j < #i)"
+
+    /* * Lemma: Spoofing_CA_Authentication
+     * Guarantees that a received publication is only accepted if the CA has previously verified it (Authentication protection).
+     */
+    lemma Spoofing_CA_Authentication:
+        "All B value #i. ReceivedPublication(B, value) @ #i 
+         ==> (Ex A #j. VerifiedPublication(A, value) @ #j & #j < #i)"
+
+    /* * Lemma: Tampering_EndToEnd_Integrity
+     * If a subscriber (B) receives a specific publication 'value', it must be 
+     * exactly the same 'value' that was originally requested by a publisher (A),
+     * unaltered by the Dolev-Yao network.
+     */
+    lemma Tampering_EndToEnd_Integrity:
+        "All B value #i. ReceivedPublication(B, value) @ #i 
+         ==> (Ex A topic #j. RequestPublication(A, topic, value) @ #j & #j < #i)"
+
+    /* Lemma: NonRepudiation_Publication_Origin
+     * Ensures accountability; if a publication is verified as valid, the originating agent must have requested that publication with the same value.
+     */
+    lemma NonRepudiation_Publication_Origin:
+        "All A value #i. VerifiedPublication(A, value) @ #i 
+         ==> (Ex topic #j. RequestPublication(A, topic, value) @ #j & #j < #i)"
+
+    /* * Lemma: InfoDisclosure_Secrecy
+     * Protects information disclosure by stating that if a publication request is made with a specific value, that value cannot be derived/known by the adversary (K).
+     */
+    lemma InfoDisclosure_Secrecy:
+        "All A topic value #i. RequestPublication(A, topic, value) @ #i 
+         ==> not (Ex #j. K(value) @ #j)"
+
+    /* * Lemma: EoP_Authorization_Check
+     * Assesses Elevation of Privilege; if an agent receives a publication, they must have initiated a valid subscription request for the respective topic beforehand.
+     */
+    lemma EoP_Authorization_Check:
+        "All B value predicate #i. SubSatisfied(B, value, predicate) @ #i 
+         ==> (Ex #j. ReceivedPublication(B, value)@ #j & #i < #j)
+         &
+         (Ex #k. RequestPredicate(B, predicate) @ #k & #k < #i)"
+
+    /* --- ADDITIONAL SECURITY LEMMAS --- */
+
+    /*
+        Replay Publication Lemma Check
+     */
+    lemma Replay_Attack_Publication:    
+        "All B value msg #i. Agent_Rx_PubResp(B, value, msg) @ #i 
+            ==> not (Ex msg2 #j. Agent_Rx_PubResp(B, value, msg2) @ #j & #i < #j)"
+    
+    /*
+        Replay Subscription Lemma Check
+    */
+    lemma Replay_Attack_Subscription:
+        "All A subscription #i. RequestSubscription(A, subscription) @ #i
+            ==> not (Ex #j #k. 
+                VerifiedSubscription(A, subscription) @ #j & 
+                VerifiedSubscription(A, subscription) @ #k & 
+                #i < #j & 
+                #j < #k)"
+    /*
+    * Lemma: Secrecy_Environment_Attribute
+    * Ensures that the environment attributes submitted by an agent remain confidential
+    * and cannot be deduced by the adversary.
+    */
+    lemma Secrecy_Environment_Attribute:
+        "All A attr enc_env #i. Sent_EnvSubmit(A, attr, enc_env) @ #i 
+        ==> not (Ex #j. K(attr) @ #j)"
+
+    /*
+    * Lemma: Spoofing_Subscription_Authentication
+    * Guarantees that if the CA processes a subscription request for an agent A,
+    * that specific agent must have actively requested it beforehand.
+    */
+    lemma Spoofing_Subscription_Authentication:
+        "All A subscription #i. VerifiedSubscription(A, subscription) @ #i 
+        ==> (Ex A subscription #j. RequestSubscription(A, subscription) @ #j & #j < #i)"
+    
+end

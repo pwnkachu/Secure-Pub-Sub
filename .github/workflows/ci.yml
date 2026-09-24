@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: implementations/rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Formatting
+        run: cargo fmt --check
+      - name: Build
+        run: cargo build --workspace --locked
+      - name: Tests
+        run: cargo test --workspace --all-features --locked
+      - name: protocol-core no-default-features
+        run: cargo check -p protocol-core --no-default-features --locked
+      - name: agent-core no-default-features
+        run: cargo check -p agent-core --no-default-features --locked
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: cargo-deny when available
+        run: if command -v cargo-deny >/dev/null 2>&1; then cargo deny check; else echo "cargo-deny is not installed; skipping"; fi

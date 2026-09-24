@@ -1,0 +1,20 @@
+[package]
+name = "ca-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+protocol-core = { workspace = true, features = ["alloc"] }
+x25519-dalek.workspace = true
+ed25519-dalek.workspace = true
+parking_lot.workspace = true
+
+[dev-dependencies]
+agent-core = { workspace = true, features = ["alloc"] }
+broker-core.workspace = true
+rand_core.workspace = true
+rand_chacha.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
+tempfile.workspace = true

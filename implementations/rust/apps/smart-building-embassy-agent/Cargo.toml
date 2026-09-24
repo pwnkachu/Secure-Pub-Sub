@@ -1,0 +1,19 @@
+[package]
+name = "smart-building-embassy-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+agent-core.workspace = true
+embassy-transport.workspace = true
+protocol-core.workspace = true
+usecase-models = { workspace = true, default-features = false, features = ["smart-building"] }
+
+[dev-dependencies]
+embedded-io-async.workspace = true
+embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
+futures-lite = "2.6.1"
+rand_chacha.workspace = true
+x25519-dalek.workspace = true

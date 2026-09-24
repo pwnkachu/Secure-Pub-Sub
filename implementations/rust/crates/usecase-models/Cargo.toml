@@ -1,0 +1,15 @@
+[package]
+name = "usecase-models"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = ["smart-building", "robot-swarm", "multi-tenant"]
+smart-building = []
+robot-swarm = []
+multi-tenant = []
+
+[dependencies]
+protocol-core.workspace = true

@@ -1,0 +1,5 @@
+{
+  "common": { "agent_id": "20000000000000000000000000000001", "broker_address": "127.0.0.1:7400", "connect_timeout_seconds": 10, "reconnect_min_seconds": 1, "reconnect_max_seconds": 30, "ed25519_secret_file": "secrets/scout-ed25519.secret", "x25519_secret_file": "secrets/scout-x25519.secret", "ca_ed25519_public_file": "secrets/ca-ed25519.public", "ca_x25519_public_file": "secrets/ca-x25519.public" },
+  "role": "scout", "swarm_id": "alpha", "mission_epoch": 7, "capability": 1,
+  "payload_capacity": 250, "battery_level": 90, "operational": true, "zone": "sector-4"
+}

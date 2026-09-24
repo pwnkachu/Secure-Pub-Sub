@@ -1,0 +1,17 @@
+[package]
+name = "robot-swarm-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+app-common.workspace = true
+agent-core = { workspace = true, features = ["std"] }
+protocol-core = { workspace = true, features = ["alloc"] }
+transport.workspace = true
+usecase-models = { workspace = true, default-features = false, features = ["robot-swarm"] }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "io-util", "io-std"] }

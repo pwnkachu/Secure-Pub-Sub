@@ -1,0 +1,16 @@
+[package]
+name = "embassy-transport"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+protocol-core.workspace = true
+embedded-io-async.workspace = true
+embassy-time.workspace = true
+
+[dev-dependencies]
+embassy-net = { version = "0.9.1", default-features = false, features = ["tcp", "proto-ipv4", "medium-ethernet"] }
+embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
+futures-lite = "2.6.1"

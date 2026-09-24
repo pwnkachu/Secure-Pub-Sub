@@ -1,0 +1,466 @@
+theory SecurePubSubV2
+
+begin
+
+    builtins: hashing, signing, symmetric-encryption
+
+    /*
+     * Tractable abstraction of one-message X25519 sessions.
+     *
+     * x25519_pk(sk) is the public X25519 key corresponding to sk.
+     * x25519_ss(static_pk,eph_pk) is an ideal shared-secret/KEM result.
+     * It is private and has no equations: only protocol rules may evaluate it.
+     * Both peers use the same ordered pair <static_pk,eph_pk>, so they agree
+     * syntactically without importing the AC equational theory of generic DH.
+     *
+     * Assumptions: no long-term-key reveal, valid X25519 public keys, and an
+     * ideal KDF.  Invalid-curve/low-order inputs and post-session compromise
+     * are intentionally outside this tractable abstraction.
+     * Ed25519 is represented by Tamarin's generic signing theory: pk/sign/
+     * verify, with the signed transcript binding role, purpose, ciphertext,
+     * ephemeral key, recipient, and (where relevant) handler.
+     *
+     * The four receive rules are marked no_derivcheck because decryption is
+     * intentional pattern matching under this private idealized KEM.  The
+     * corresponding receiver owns the static secret in its premise; the
+     * abstraction exposes only public keys in x25519_ss, so Tamarin's generic
+     * message-derivation check cannot infer that ownership relation.
+     */
+    functions: x25519_pk/1, x25519_ss/2 [private]
+
+    restriction Equality:
+        "All x y #i. Eq(x,y) @ #i ==> x = y"
+
+    restriction Single_KeyGen_Per_Agent:
+        "All A sign1 x1 sign2 x2 #i #j.
+           KeyGen(A, sign1, x1) @ #i & KeyGen(A, sign2, x2) @ #j
+           ==> #i = #j"
+
+    restriction Single_CA_Setup:
+        "All sign1 x1 sign2 x2 #i #j.
+           CAKeyGen(sign1, x1) @ #i & CAKeyGen(sign2, x2) @ #j
+           ==> #i = #j"
+
+    restriction CA_Verified_Nonce:
+        "All A nonce #i #j. VerifiedNonce(A, nonce) @ #i & VerifiedNonce(A, nonce) @ #j ==> #i = #j"
+
+// --- SETUP RULES ---
+
+    rule Agent_KeyGen:
+    [ 
+        Fr(~ltkA_sign),
+        Fr(~ltkA_x)
+    ] 
+    --[ KeyGen($A, ~ltkA_sign, ~ltkA_x) ]-> 
+    [ 
+        !Ltk($A, ~ltkA_sign, ~ltkA_x, x25519_pk(~ltkA_x)), 
+        !Pk($A, pk(~ltkA_sign), x25519_pk(~ltkA_x)),  
+        Out(<pk(~ltkA_sign), x25519_pk(~ltkA_x)>)       
+    ]
+
+    rule Generate_CA_Keys:
+
+    [ 
+        Fr(~skCA_sign),
+        Fr(~skCA_x)
+    ]
+
+    --[ CAKeyGen(~skCA_sign, ~skCA_x) ]->
+
+    [ 
+        !CA_PrivateKey(~skCA_sign, ~skCA_x, x25519_pk(~skCA_x)), 
+        !CA_PublicKey(pk(~skCA_sign), x25519_pk(~skCA_x)), 
+        Out(<pk(~skCA_sign), x25519_pk(~skCA_x)>) 
+    ]
+
+
+
+// --- UPDATE / REGISTRATION ---
+
+    rule Agent_Set_Env:
+    let 
+        session_pk = x25519_pk(~session_sk)
+        secret = x25519_ss(pkCA_x, session_pk)
+        shared_key = h(<secret, 'k_env'>)
+        enc_env = senc(<'env', ~attribute, $PredicateEnv, ~nonce>, shared_key )
+        signature = sign(
+            <'env_submit', enc_env, $A, session_pk, 'CA'>,
+            ~ltkA_sign ) 
+    in
+    [ 
+        !Ltk($A, ~ltkA_sign, ~ltkA_x, pkA_x), 
+        !CA_PublicKey(pkCA_sign, pkCA_x), 
+        Fr(~attribute),
+        Fr(~nonce),
+        Fr(~session_sk)
+    ]
+    --[ 
+        Sent_EnvSubmit($A, ~attribute, enc_env),
+
+        OUT_Env(~attribute, enc_env),
+
+        GeneratedIntent($A, ~nonce, 'set_env'),
+
+        X25519_Init($A, 'CA', 'env', session_pk, shared_key)
+    ]->
+    [ 
+        Out(<'env_submit', signature, enc_env, session_pk> ) 
+    ]
+
+    rule CA_Verify_Env_Submission [no_derivcheck]:
+    let 
+        secret = x25519_ss(pkCA_x, agent_session_pk)
+        shared_key = h(<secret, 'k_env'>) 
+        enc_env = senc(<'env', attr, $PredicateEnv, nonce>, shared_key )
+    in
+
+    [
+        !CA_PrivateKey(~skCA_sign, ~skCA_x, pkCA_x),
+        !CA_PublicKey(pkCA_sign, pkCA_x),
+        !Pk($A, pkA_sign, pkA_x),
+        In(<'env_submit', signature, enc_env, agent_session_pk>)
+    ]
+    --[ 
+        Eq( verify(signature,
+                   <'env_submit', enc_env, $A, agent_session_pk, 'CA'>,
+                   pkA_sign), true ),
+        VerifiedEnvSubmit($A, enc_env),
+        CA_Verified_Env($A, attr, enc_env),
+        IN_Env(attr, enc_env),
+        VerifiedNonce($A, nonce),
+        AcceptedAs($A, nonce, 'set_env'),
+        X25519_Accept($A, 'CA', 'env', agent_session_pk, shared_key)
+    ]->
+    [ 
+        !Env($A, attr, $PredicateEnv) 
+    ] 
+
+
+
+// --- SUBSCRIPTION ---
+
+    rule Agent_Request_Subscription:
+    let 
+        agent_session_pk = x25519_pk(~session_sk)
+        secret = x25519_ss(pkCA_x, agent_session_pk)
+        shared_key = h(<secret, 'k_subscription'>)
+        subscription = senc(<'subscribe', $Predicate, $Type, ~nonce>, shared_key)
+        signature = sign(
+            <'subscription_request', subscription, $A, ~handler,
+             agent_session_pk, 'CA'>,
+            ~ltkA_sign)
+    in
+    [ 
+        !Ltk($A, ~ltkA_sign, ~ltkA_x, pkA_x), 
+        !CA_PublicKey(pkCA_sign, pkCA_x),
+        Fr(~handler),
+        Fr(~nonce),
+        Fr(~session_sk)
+    ]
+    --[ 
+        RequestSubscription($A, subscription),
+        RequestPredicate($A, $Predicate),
+        OUT_Sub(subscription),
+        GeneratedIntent($A, ~nonce, 'sub_req'),
+        X25519_Init($A, 'CA', 'subscription', agent_session_pk, shared_key)
+    ]->
+
+    [        
+        !Handler($A, ~handler),
+        Out(<'subscription_request', subscription, signature,
+             $A, ~handler, agent_session_pk>) 
+    ]
+
+    rule CA_Verify_Subscription_Request [no_derivcheck]:
+    let
+        secret = x25519_ss(pkCA_x, agent_session_pk)
+        shared_key = h(<secret, 'k_subscription'>) 
+        subscription = senc(<'subscribe', $Predicate, $Type, nonce>, shared_key)
+    in
+    [ 
+        !CA_PrivateKey(~skCA_sign, ~skCA_x, pkCA_x),
+        !CA_PublicKey(pkCA_sign, pkCA_x),
+        !Pk($A, pkA_sign, pkA_x),
+        In(<'subscription_request', subscription, signature,
+            $A, handler, agent_session_pk>)
+    ]
+    --[ 
+        Eq(verify(signature,
+                  <'subscription_request', subscription, $A, handler,
+                   agent_session_pk, 'CA'>,
+                  pkA_sign), true ),
+
+        IN_Sub(subscription),
+        VerifiedSubscription($A, subscription),
+        VerifiedNonce($A, nonce),
+        AcceptedAs($A, nonce, 'sub_req'),
+        X25519_Accept($A, 'CA', 'subscription', agent_session_pk, shared_key)
+    ]->
+    [ 
+        !Subscription($A, $Predicate, $Type, handler)
+    ]
+
+
+
+// --- PUBLICATION ---
+
+    rule Agent_Request_Publication:
+    let 
+        agent_session_pk = x25519_pk(~session_sk)
+        secret = x25519_ss(pkCA_x, agent_session_pk)
+        shared_key = h(<secret, 'k_publication_request'>)
+        publication = senc(<'publish', $PredicatePub, ~value, $Type, ~nonce>, shared_key)
+        signature = sign(
+            <'publication_request', publication, $A,
+             agent_session_pk, 'CA'>,
+            ~ltkA_sign)
+    in
+    [ 
+        !Ltk($A, ~ltkA_sign, ~ltkA_x, pkA_x), 
+        !CA_PublicKey(pkCA_sign, pkCA_x), 
+        Fr(~value),
+        Fr(~nonce),
+        Fr(~session_sk)
+    ]
+    --[ 
+        RequestPublication($A, $PredicatePub, ~value),
+        OUT_Pub(~value, publication),
+        GeneratedIntent($A, ~nonce, 'pub_req'),
+        X25519_Init($A, 'CA', 'publication_request', agent_session_pk, shared_key)
+    ]->
+    [ 
+        Out(<'publication_request', publication, signature,
+          $A, agent_session_pk>) 
+    ]
+
+    // Phase 1: authenticate and decrypt the request.  No response ciphertext
+    // is produced here, so this rule cannot feed its own network premise.
+    rule CA_Verify_Publication [no_derivcheck]:
+    let
+        secret = x25519_ss(pkCA_x, A_session_pk)
+        pub_shared_key = h(<secret, 'k_publication_request'>) 
+        publication = senc(<'publish', $PredicatePub, value, $Type, nonce>, pub_shared_key)
+    in
+    [ 
+        !CA_PrivateKey(~skCA_sign, ~skCA_x, pkCA_x),
+        !CA_PublicKey(pkCA_sign, pkCA_x),
+        !Subscription($B, $PredicateSub, $Type, handler),
+        !Env($A, attr, $PredicateSub),
+        !Env($B, attr2, $PredicatePub),
+        !Pk($A, pkA_sign, pkA_x),
+        In(<'publication_request', publication, signature,
+            $A, A_session_pk>)
+    ]
+    --[ 
+        Eq( verify(signature,
+                   <'publication_request', publication, $A,
+                    A_session_pk, 'CA'>,
+                   pkA_sign), true ),
+        VerifiedPublication($A, value),
+        SubSatisfied($B, value, $PredicateSub),
+        IN_Pub(value, publication),
+        VerifiedNonce($A, nonce),
+        AcceptedAs($A, nonce, 'pub_req'),
+        X25519_Accept($A, 'CA', 'publication_request', A_session_pk,
+                    pub_shared_key)
+    ]->
+
+    [ 
+        St_CA_VerifiedPublication($A, $B, value, handler)
+    ]
+
+    // Phase 2: consume the verified state exactly once and build a response
+    // under a distinct DH/KDF domain.
+    rule CA_Send_Publication:
+    let
+        CA_session_pk = x25519_pk(~session_private_key)
+        CA_secret = x25519_ss(pkB_x, CA_session_pk)
+        shared_key = h(<CA_secret, 'k_publication_response'>)
+        result = senc(<'publication_response', value, ~CA_nonce>, shared_key)
+        result_sign = sign(
+            <'publication_response', result, CA_session_pk, $B, handler>,
+            ~skCA_sign)
+    in
+    [
+        St_CA_VerifiedPublication($A, $B, value, handler),
+        !CA_PrivateKey(~skCA_sign, ~skCA_x, pkCA_x),
+        !Pk($B, pkB_sign, pkB_x),
+        Fr(~CA_nonce),
+        Fr(~session_private_key)
+    ]
+    --[
+        GeneratedIntent('CA', ~CA_nonce, 'res_send'),
+        X25519_Init('CA', $B, 'publication_response', CA_session_pk, shared_key),
+        OUT_PubResp(value, result)
+    ]->
+    [ 
+        Out(<'publication_response', result, result_sign,
+          $B, handler, CA_session_pk>) 
+    ]
+
+    rule Agent_Receive_Publication [no_derivcheck]:
+    let
+        secret = x25519_ss(pkB_x, CA_session_pk)
+        shared_key = h(<secret, 'k_publication_response'>) 
+        result = senc(<'publication_response', value, CA_nonce>, shared_key)
+    in
+    [ 
+        !Ltk($B, ~ltkB_sign, ~ltkB_x, pkB_x),
+        !Handler($B, handler),
+        !CA_PublicKey(pkCA_sign, pkCA_x),
+        In(<'publication_response', result, signature,
+            $B, handler, CA_session_pk>)
+    ]
+
+    --[ 
+        Eq( verify(signature,
+                   <'publication_response', result, CA_session_pk, $B, handler>,
+                   pkCA_sign), true ),
+        ReceivedPublication($B, value),
+        Agent_Rx_PubResp($B, value, result),
+        VerifiedNonce('CA', CA_nonce),
+        AcceptedAs('CA', CA_nonce, 'res_send'),
+        X25519_Accept('CA', $B, 'publication_response', CA_session_pk,
+                    shared_key)
+    ]->
+    [ ]
+
+
+
+
+    lemma types[sources]:
+
+        "((All secret publication #i.
+
+            (IN_Pub(secret, publication) @ #i) 
+
+        ==> (Ex #j. (!KU(secret) @ #j) & (#j < #i))
+
+        | (Ex #j. (OUT_Pub(secret, publication) @ #j) & (#j < #i)))
+
+        &
+
+        (All B value result #i.
+
+            (Agent_Rx_PubResp(B, value, result) @ #i)
+
+        ==> (Ex #j. (OUT_PubResp(value, result) @ #j) & (#j < #i))))"
+
+    // Sanity check for the idealized one-message X25519/KDF abstraction.
+    lemma X25519_One_Message_Agreement:
+
+        "All Sender Receiver purpose eph_pk session_key #i.
+
+            X25519_Accept(Sender, Receiver, purpose, eph_pk, session_key) @ #i
+
+        ==> (Ex #j.
+
+            X25519_Init(Sender, Receiver, purpose, eph_pk, session_key) @ #j
+
+            & #j < #i)"
+
+    lemma Executability_Receive_Publication:
+
+        exists-trace
+
+        "Ex B value #i. ReceivedPublication(B, value) @ #i"
+
+    lemma Executability_CA_Matching:
+
+        exists-trace
+
+        "Ex A value #i. VerifiedPublication(A, value) @ #i"
+
+    lemma Executability_Env_Update: 
+
+        exists-trace
+
+        "Ex A enc_env #i. VerifiedEnvSubmit(A, enc_env) @ #i"
+
+    lemma Spoofing_Env_Authentication:
+
+        "All A enc_env #i. VerifiedEnvSubmit(A, enc_env) @ #i 
+
+         ==> (Ex attr #j. Sent_EnvSubmit(A, attr, enc_env) @ #j & #j < #i)"
+
+    lemma Spoofing_CA_Authentication:
+
+        "All B value #i. ReceivedPublication(B, value) @ #i 
+
+         ==> (Ex A #j. VerifiedPublication(A, value) @ #j & #j < #i)"
+
+    lemma Tampering_EndToEnd_Integrity:
+
+        "All B value #i. ReceivedPublication(B, value) @ #i 
+
+         ==> (Ex A topic #j. RequestPublication(A, topic, value) @ #j & #j < #i)"
+
+    lemma NonRepudiation_Publication_Origin:
+
+        "All A value #i. VerifiedPublication(A, value) @ #i 
+
+         ==> (Ex topic #j. RequestPublication(A, topic, value) @ #j & #j < #i)"
+
+    lemma InfoDisclosure_Secrecy:
+
+        "All A topic value #i. RequestPublication(A, topic, value) @ #i 
+
+         ==> not (Ex #j. K(value) @ #j)"
+
+    lemma EoP_Authorization_Check:
+
+        "All B value predicate #i. 
+
+SubSatisfied(B, value, predicate) @ #i 
+
+        ==> 
+
+            (Ex #k. RequestPredicate(B, predicate) @ #k & #k < #i)"
+
+    lemma Replay_Attack_Publication:    
+
+        "All B value msg #i. Agent_Rx_PubResp(B, value, msg) @ #i 
+
+            ==> not (Ex msg2 #j. Agent_Rx_PubResp(B, value, msg2) @ #j & #i < #j)"
+
+    lemma Replay_Attack_Subscription:
+
+        "All A subscription #i. RequestSubscription(A, subscription) @ #i
+
+            ==> not (Ex #j #k. 
+
+VerifiedSubscription(A, subscription) @ #j & 
+
+VerifiedSubscription(A, subscription) @ #k & 
+
+                #i < #j & 
+
+                #j < #k)"
+
+    lemma Secrecy_Environment_Attribute:
+
+        "All A attr enc_env #i. Sent_EnvSubmit(A, attr, enc_env) @ #i 
+
+        ==> not (Ex #j. K(attr) @ #j)"
+
+    lemma Spoofing_Subscription_Authentication:
+
+        "All A subscription #i. VerifiedSubscription(A, subscription) @ #i 
+
+        ==> (Ex #j. RequestSubscription(A, subscription) @ #j & #j < #i)"
+
+    lemma Type_Confusion:
+
+    all-traces
+
+    "All actor1 actor2 nonce expected_type actual_type #i #j.
+
+        (AcceptedAs(actor2, nonce, actual_type) @ #i) &
+
+        (GeneratedIntent(actor1, nonce, expected_type) @ #j)
+
+        ==>
+
+        (expected_type = actual_type)"
+
+end

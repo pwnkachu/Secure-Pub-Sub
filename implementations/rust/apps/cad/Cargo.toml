@@ -1,0 +1,35 @@
+[package]
+name = "cad"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+app-common.workspace = true
+ca-core.workspace = true
+infrastructure-link.workspace = true
+protocol-core = { workspace = true, features = ["alloc"] }
+transport.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+futures-util = { workspace = true, features = ["sink", "std"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "time"] }
+tokio-util = { workspace = true, features = ["codec"] }
+ed25519-dalek.workspace = true
+x25519-dalek.workspace = true
+getrandom.workspace = true
+hex.workspace = true
+
+[[bin]]
+name = "cad"
+path = "src/main.rs"
+
+[[bin]]
+name = "secure-pubsub-keygen"
+path = "src/keygen.rs"
+
+[dev-dependencies]
+tempfile.workspace = true
+agent-core = { workspace = true, features = ["std"] }

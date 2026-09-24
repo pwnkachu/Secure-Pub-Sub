@@ -1,0 +1,77 @@
+{
+  "listen": "127.0.0.1:7500",
+  "state": "state/ca.snapshot",
+  "ca_ed25519_secret_file": "secrets/ca-ed25519.secret",
+  "ca_x25519_secret_file": "secrets/ca-x25519.secret",
+  "broker_link_psk_file": "secrets/broker-ca.psk",
+  "broker_auth_timeout_seconds": 5,
+  "broker_link_io_timeout_seconds": 10,
+  "broker_link_retry_seconds": 2,
+  "broker_pending_deliveries": 512,
+  "broker_dedup_entries": 1024,
+  "reload_seconds": 2,
+  "limits": { "agents": 128, "environments": 128, "subscriptions": 512, "replays": 4096, "replay_ttl_seconds": 600 },
+  "agents": [
+    { "id": "10000000000000000000000000000001", "ed25519_public_file": "secrets/building-sensor-ed25519.public", "x25519_public_file": "secrets/building-sensor-x25519.public" },
+    { "id": "10000000000000000000000000000002", "ed25519_public_file": "secrets/building-panel-ed25519.public", "x25519_public_file": "secrets/building-panel-x25519.public" },
+    { "id": "10000000000000000000000000000003", "ed25519_public_file": "secrets/building-maintenance-ed25519.public", "x25519_public_file": "secrets/building-maintenance-x25519.public" },
+    { "id": "20000000000000000000000000000001", "ed25519_public_file": "secrets/scout-ed25519.public", "x25519_public_file": "secrets/scout-x25519.public" },
+    { "id": "20000000000000000000000000000002", "ed25519_public_file": "secrets/coordinator-ed25519.public", "x25519_public_file": "secrets/coordinator-x25519.public" },
+    { "id": "20000000000000000000000000000003", "ed25519_public_file": "secrets/responder-ed25519.public", "x25519_public_file": "secrets/responder-x25519.public" },
+    { "id": "30000000000000000000000000000001", "ed25519_public_file": "secrets/tenant-publisher-ed25519.public", "x25519_public_file": "secrets/tenant-publisher-x25519.public" },
+    { "id": "30000000000000000000000000000002", "ed25519_public_file": "secrets/tenant-consumer-ed25519.public", "x25519_public_file": "secrets/tenant-consumer-x25519.public" }
+  ],
+  "policy": {
+    "attributes": [
+      { "id": 4097, "kind": "bytes", "authority": "ca_issued" },
+      { "id": 4098, "kind": "i64", "authority": "ca_issued" },
+      { "id": 4099, "kind": "i64", "authority": "ca_issued", "allowed": [{"kind":"i64","value":1},{"kind":"i64","value":2},{"kind":"i64","value":3}] },
+      { "id": 4100, "kind": "bool", "authority": "ca_issued" },
+      { "id": 4101, "kind": "i64", "authority": "ca_issued", "allowed": [{"kind":"i64","value":1},{"kind":"i64","value":2},{"kind":"i64","value":3}] },
+      { "id": 4102, "kind": "bool", "authority": "self_declared" },
+      { "id": 4103, "kind": "i64", "authority": "self_declared" },
+      { "id": 4104, "kind": "i64", "authority": "self_declared" },
+      { "id": 4105, "kind": "bytes", "authority": "ca_issued" },
+      { "id": 8193, "kind": "bytes", "authority": "ca_issued" },
+      { "id": 8194, "kind": "i64", "authority": "ca_issued" },
+      { "id": 8195, "kind": "i64", "authority": "ca_issued", "allowed": [{"kind":"i64","value":1},{"kind":"i64","value":2},{"kind":"i64","value":3},{"kind":"i64","value":4}] },
+      { "id": 8196, "kind": "i64", "authority": "ca_issued" },
+      { "id": 8197, "kind": "i64", "authority": "ca_issued" },
+      { "id": 8198, "kind": "bool", "authority": "self_declared" },
+      { "id": 8199, "kind": "i64", "authority": "self_declared" },
+      { "id": 8200, "kind": "bytes", "authority": "self_declared" },
+      { "id": 8201, "kind": "bytes", "authority": "ca_issued" },
+      { "id": 8202, "kind": "bytes", "authority": "ca_issued" },
+      { "id": 12289, "kind": "bytes", "authority": "ca_issued" },
+      { "id": 12290, "kind": "bytes", "authority": "ca_issued" },
+      { "id": 12291, "kind": "i64", "authority": "ca_issued" },
+      { "id": 12292, "kind": "i64", "authority": "ca_issued" },
+      { "id": 12293, "kind": "i64", "authority": "ca_issued" },
+      { "id": 12294, "kind": "bool", "authority": "self_declared" },
+      { "id": 12295, "kind": "bytes", "authority": "ca_issued" }
+    ],
+    "approvals": [
+      {"agent":"10000000000000000000000000000001","attribute":4097,"value":{"kind":"bytes","value":"north"}}, {"agent":"10000000000000000000000000000001","attribute":4098,"value":{"kind":"i64","value":2}}, {"agent":"10000000000000000000000000000001","attribute":4099,"value":{"kind":"i64","value":1}}, {"agent":"10000000000000000000000000000001","attribute":4100,"value":{"kind":"bool","value":true}}, {"agent":"10000000000000000000000000000001","attribute":4105,"value":{"kind":"bytes","value":"zone-a"}},
+      {"agent":"10000000000000000000000000000002","attribute":4097,"value":{"kind":"bytes","value":"north"}}, {"agent":"10000000000000000000000000000002","attribute":4099,"value":{"kind":"i64","value":2}}, {"agent":"10000000000000000000000000000002","attribute":4101,"value":{"kind":"i64","value":1}}, {"agent":"10000000000000000000000000000002","attribute":4105,"value":{"kind":"bytes","value":"zone-a"}},
+      {"agent":"10000000000000000000000000000003","attribute":4097,"value":{"kind":"bytes","value":"north"}}, {"agent":"10000000000000000000000000000003","attribute":4099,"value":{"kind":"i64","value":3}}, {"agent":"10000000000000000000000000000003","attribute":4101,"value":{"kind":"i64","value":2}}, {"agent":"10000000000000000000000000000003","attribute":4105,"value":{"kind":"bytes","value":"zone-a"}},
+      {"agent":"20000000000000000000000000000001","attribute":8193,"value":{"kind":"bytes","value":"alpha"}}, {"agent":"20000000000000000000000000000001","attribute":8194,"value":{"kind":"i64","value":7}}, {"agent":"20000000000000000000000000000001","attribute":8195,"value":{"kind":"i64","value":2}}, {"agent":"20000000000000000000000000000001","attribute":8196,"value":{"kind":"i64","value":1}}, {"agent":"20000000000000000000000000000001","attribute":8197,"value":{"kind":"i64","value":250}}, {"agent":"20000000000000000000000000000001","attribute":8201,"value":{"kind":"bytes","value":"none"}}, {"agent":"20000000000000000000000000000001","attribute":8202,"value":{"kind":"hex","value":"20000000000000000000000000000001"}},
+      {"agent":"20000000000000000000000000000002","attribute":8193,"value":{"kind":"bytes","value":"alpha"}}, {"agent":"20000000000000000000000000000002","attribute":8194,"value":{"kind":"i64","value":7}}, {"agent":"20000000000000000000000000000002","attribute":8195,"value":{"kind":"i64","value":1}}, {"agent":"20000000000000000000000000000002","attribute":8196,"value":{"kind":"i64","value":5}}, {"agent":"20000000000000000000000000000002","attribute":8197,"value":{"kind":"i64","value":0}}, {"agent":"20000000000000000000000000000002","attribute":8201,"value":{"kind":"bytes","value":"none"}}, {"agent":"20000000000000000000000000000002","attribute":8202,"value":{"kind":"hex","value":"20000000000000000000000000000002"}},
+      {"agent":"20000000000000000000000000000003","attribute":8193,"value":{"kind":"bytes","value":"alpha"}}, {"agent":"20000000000000000000000000000003","attribute":8194,"value":{"kind":"i64","value":7}}, {"agent":"20000000000000000000000000000003","attribute":8195,"value":{"kind":"i64","value":3}}, {"agent":"20000000000000000000000000000003","attribute":8196,"value":{"kind":"i64","value":3}}, {"agent":"20000000000000000000000000000003","attribute":8197,"value":{"kind":"i64","value":5000}}, {"agent":"20000000000000000000000000000003","attribute":8201,"value":{"kind":"bytes","value":"none"}}, {"agent":"20000000000000000000000000000003","attribute":8202,"value":{"kind":"hex","value":"20000000000000000000000000000003"}},
+      {"agent":"30000000000000000000000000000001","attribute":12289,"value":{"kind":"bytes","value":"tenant-a"}}, {"agent":"30000000000000000000000000000001","attribute":12290,"value":{"kind":"bytes","value":"orders"}}, {"agent":"30000000000000000000000000000001","attribute":12291,"value":{"kind":"i64","value":1}}, {"agent":"30000000000000000000000000000001","attribute":12292,"value":{"kind":"i64","value":1}}, {"agent":"30000000000000000000000000000001","attribute":12293,"value":{"kind":"i64","value":2}}, {"agent":"30000000000000000000000000000001","attribute":12295,"value":{"kind":"bytes","value":"eu-central"}},
+      {"agent":"30000000000000000000000000000002","attribute":12289,"value":{"kind":"bytes","value":"tenant-a"}}, {"agent":"30000000000000000000000000000002","attribute":12290,"value":{"kind":"bytes","value":"billing"}}, {"agent":"30000000000000000000000000000002","attribute":12291,"value":{"kind":"i64","value":1}}, {"agent":"30000000000000000000000000000002","attribute":12292,"value":{"kind":"i64","value":2}}, {"agent":"30000000000000000000000000000002","attribute":12293,"value":{"kind":"i64","value":2}}, {"agent":"30000000000000000000000000000002","attribute":12295,"value":{"kind":"bytes","value":"eu-central"}}
+    ],
+    "isolations": [
+      {"type_id":4097,"attributes":[4097]}, {"type_id":4098,"attributes":[4097]}, {"type_id":4099,"attributes":[4097]}, {"type_id":4100,"attributes":[4097]},
+      {"type_id":8193,"attributes":[8193,8194]}, {"type_id":8194,"attributes":[8193,8194]}, {"type_id":8195,"attributes":[8193,8194]}, {"type_id":8196,"attributes":[8193,8194]}, {"type_id":8197,"attributes":[8193,8194]}, {"type_id":8198,"attributes":[8193,8194]},
+      {"type_id":12289,"attributes":[12289]}, {"type_id":12290,"attributes":[12289]}, {"type_id":12291,"attributes":[12289]}, {"type_id":12292,"attributes":[12289]}
+    ],
+    "subscriber_requirements": [
+      {"type_id":4097,"attribute":4101,"values":[{"kind":"i64","value":1}]},
+      {"type_id":4100,"attribute":4101,"values":[{"kind":"i64","value":2}]},
+      {"type_id":8193,"attribute":8195,"values":[{"kind":"i64","value":1}]},
+      {"type_id":8194,"attribute":8195,"values":[{"kind":"i64","value":3}]},
+      {"type_id":8196,"attribute":8195,"values":[{"kind":"i64","value":3}]},
+      {"type_id":12289,"attribute":12292,"values":[{"kind":"i64","value":2}]}
+    ]
+  }
+}

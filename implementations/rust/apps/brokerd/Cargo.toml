@@ -1,0 +1,19 @@
+[package]
+name = "brokerd"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+broker-core.workspace = true
+infrastructure-link.workspace = true
+protocol-core = { workspace = true, features = ["alloc"] }
+transport.workspace = true
+clap.workspace = true
+futures-util = { workspace = true, features = ["sink", "std"] }
+bytes.workspace = true
+getrandom.workspace = true
+hex.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "sync", "time"] }
+tokio-util = { workspace = true, features = ["codec"] }

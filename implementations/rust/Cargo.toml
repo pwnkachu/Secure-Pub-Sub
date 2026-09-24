@@ -1,0 +1,70 @@
+[workspace]
+resolver = "3"
+members = [
+  "crates/protocol-core",
+  "crates/agent-core",
+  "crates/ca-core",
+  "crates/broker-core",
+  "crates/transport",
+  "crates/infrastructure-link",
+  "crates/embassy-transport",
+  "crates/usecase-models",
+  "crates/app-common",
+  "apps/brokerd",
+  "apps/cad",
+  "apps/smart-building-agent",
+  "apps/smart-building-embassy-agent",
+  "apps/robot-swarm-agent",
+  "apps/multi-tenant-agent",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+protocol-core = { path = "crates/protocol-core", default-features = false }
+agent-core = { path = "crates/agent-core", default-features = false }
+ca-core = { path = "crates/ca-core" }
+broker-core = { path = "crates/broker-core" }
+transport = { path = "crates/transport" }
+infrastructure-link = { path = "crates/infrastructure-link" }
+embassy-transport = { path = "crates/embassy-transport" }
+usecase-models = { path = "crates/usecase-models", default-features = false }
+app-common = { path = "crates/app-common" }
+x25519-dalek = { version = "3.0.0", default-features = false, features = ["static_secrets", "zeroize"] }
+ed25519-dalek = { version = "3.0.0", default-features = false, features = ["zeroize"] }
+hkdf = { version = "0.13.0", default-features = false }
+sha2 = { version = "0.11.0", default-features = false }
+chacha20poly1305 = { version = "0.11.0", default-features = false }
+zeroize = { version = "1.8.1", default-features = false }
+subtle = { version = "2.6.1", default-features = false }
+rand_core = { version = "0.10.1", default-features = false }
+rand_chacha = { version = "0.10.0", default-features = false }
+getrandom = { version = "0.3.3" }
+tokio = { version = "1.53.1", default-features = false }
+tokio-util = { version = "0.7.16", default-features = false }
+bytes = { version = "1.10.1", default-features = false }
+futures-util = { version = "0.3.31", default-features = false }
+thiserror = "2.0.16"
+parking_lot = "0.12.4"
+clap = { version = "4.5.46", features = ["derive", "env"] }
+hex = "0.4.3"
+proptest = "1.7.0"
+hex-literal = "1.0.0"
+tempfile = "3.27.0"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.143"
+embedded-io-async = "0.7.0"
+embassy-time = "0.5.1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+
+[profile.bench]
+lto = "thin"
+codegen-units = 1
